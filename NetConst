@@ -1,0 +1,86 @@
+# -*- coding: utf-8 -*-
+"""
+Build Network Graph from Filtered Correlation Matrix of ERA5 Temperature Data
+
+This script reads a filtered correlation matrix stored as a pickle file, visualizes 
+the distribution of positive correlation values, constructs a NetworkX graph where 
+nodes represent spatial points and edges represent correlations, and saves the graph 
+in GEXF and edge list formats for further analysis or visualization.
+
+Node attributes include latitude and longitude extracted from node labels. Nodes 
+are then relabeled with integer IDs for simplicity.
+
+Author: alireza_Kavousi
+Created on: 2024-08-18
+"""
+
+import re
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import networkx as nx
+
+# Configuration parameters
+label = '01'
+distance_range = '60-90Km'
+base_dir = os.path.join(
+    "path_to_your_data",  # Replace with your base data directory
+    "ERA5",
+    "850hPa",
+    f"{label}-01-2021"
+)
+
+input_filename = f"CorrelationMatrix_850hPa_Temp_{label}-01-2021_{distance_range}.pkl"
+output_name = f"Network_850hPa_Temp_{label}-01-2021_{distance_range}"
+
+input_path = os.path.join(base_dir, input_filename)
+output_gexf_path = os.path.join(base_dir, f"{output_name}.gexf")
+output_edgelist_path = os.path.join(base_dir, f"{output_name}.csv")
+output_hist_path = os.path.join(base_dir, f"{output_name}_Hist.png")
+
+def main():
+    # Load the filtered correlation matrix
+    corr_df = pd.read_pickle(input_path)
+
+    # Flatten the matrix and plot histogram of positive correlations
+    corr_values = corr_df.values.flatten()
+    positive_corrs = corr_values[corr_values > 0]
+
+    plt.figure(figsize=(10, 6))
+    plt.hist(positive_corrs, bins=500, color='skyblue', edgecolor='black')
+    plt.title("Histogram of Positive Correlations")
+    plt.xlabel("Correlation value")
+    plt.ylabel("Frequency")
+    plt.savefig(output_hist_path)
+    plt.close()
+    print(f"Histogram saved to {output_hist_path}")
+
+    # Create an undirected graph from the correlation matrix
+    G = nx.from_pandas_adjacency(corr_df)
+
+    # Add latitude and longitude attributes to nodes by parsing node labels
+    for node in G.nodes():
+        lat_lon = re.findall(r'\d+\.\d+', str(node))
+        if len(lat_lon) == 2:
+            G.nodes[node]['latitude'] = float(lat_lon[0])
+            G.nodes[node]['longitude'] = float(lat_lon[1])
+        else:
+            # If parsing fails, set attributes to None or handle accordingly
+            G.nodes[node]['latitude'] = None
+            G.nodes[node]['longitude'] = None
+
+    # Relabel nodes with integer IDs for simplicity
+    mapping = {node: idx for idx, node in enumerate(G.nodes())}
+    G = nx.relabel_nodes(G, mapping)
+
+    # Save graph in GEXF format (compatible with Gephi and other tools)
+    nx.write_gexf(G, output_gexf_path)
+    print(f"Graph saved in GEXF format to {output_gexf_path}")
+
+    # Save edge list without data attributes, tab-delimited
+    nx.write_edgelist(G, output_edgelist_path, delimiter="\t", data=False)
+    print(f"Edge list saved to {output_edgelist_path}")
+
+if __name__ == "__main__":
+    main()
