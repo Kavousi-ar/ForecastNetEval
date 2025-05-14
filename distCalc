@@ -1,0 +1,89 @@
+# -*- coding: utf-8 -*-
+"""
+Filter Correlation Matrix by Distance Thresholds for ERA5 Temperature Data
+
+This script loads a precomputed correlation matrix of temperature time series 
+at 850 hPa from ERA5 data, filters the correlations based on spatial distance 
+thresholds (minimum and maximum in kilometers), and saves the filtered matrix. 
+
+The filtering sets correlation values to zero for pairs of points that are either 
+too close (< min_threshold_km) or too far (> max_threshold_km), helping focus 
+analysis on spatial scales of interest.
+
+Author: alireza_kavousi
+Created on: 2024-08-20
+"""
+
+import numpy as np
+import pandas as pd
+
+# Label and filename components
+label = "26"
+output_name = f"CorrelationMatrix_850hPa_Temp_{label}-01-2021_90-150Km"
+
+# Path to the directory containing the correlation matrix pickle file
+# Update this to your local data directory
+data_dir = "/path/to/your/data/ERA5/850hPa/"
+
+# Full path to the input correlation matrix pickle file
+input_corr_path = f"{data_dir}{label}-01-2021/CorrelationMatrix_850hPa_Temp_{label}-01-2021.pkl"
+
+# Full path to save the filtered correlation matrix
+output_corr_path = f"{data_dir}{label}-01-2021/{output_name}.pkl"
+
+def filter_correlation_by_distance(df: pd.DataFrame, min_threshold_km: float, max_threshold_km: float) -> pd.DataFrame:
+    """
+    Filter correlation matrix values based on geographic distance thresholds.
+
+    Args:
+        df (pd.DataFrame): Square correlation matrix with spatial coordinates as index and columns.
+                           Index and columns should be tuples or lists of (latitude, longitude).
+        min_threshold_km (float): Minimum distance threshold in kilometers; correlations below this distance are zeroed.
+        max_threshold_km (float): Maximum distance threshold in kilometers; correlations above this distance are zeroed.
+
+    Returns:
+        pd.DataFrame: Filtered correlation matrix where correlations outside the distance range are set to zero.
+    """
+    # Extract coordinates from index (assumed to be tuples of (lat, lon))
+    coords = np.array(df.index.tolist()).astype(float)
+
+    # Convert degrees to radians for haversine formula
+    lat_rad = np.radians(coords[:, 0])
+    lon_rad = np.radians(coords[:, 1])
+
+    # Compute pairwise distance matrix using haversine formula
+    dlat = lat_rad[:, np.newaxis] - lat_rad[np.newaxis, :]
+    dlon = lon_rad[:, np.newaxis] - lon_rad[np.newaxis, :]
+
+    a = np.sin(dlat / 2)**2 + np.cos(lat_rad)[:, np.newaxis] * np.cos(lat_rad)[np.newaxis, :] * np.sin(dlon / 2)**2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    earth_radius_km = 6371
+    distances = earth_radius_km * c
+
+    # Create mask for distances outside the [min_threshold_km, max_threshold_km] range
+    mask = (distances < min_threshold_km) | (distances > max_threshold_km)
+
+    # Zero out correlations where distance is outside the threshold range
+    filtered_values = df.values.copy()
+    filtered_values[mask] = 0
+
+    # Return a new DataFrame with the filtered values, preserving index and columns
+    return pd.DataFrame(filtered_values, index=df.index, columns=df.columns)
+
+def main():
+    # Load the original correlation matrix
+    corr_df = pd.read_pickle(input_corr_path)
+
+    # Define distance thresholds in kilometers
+    min_dist_km = 90
+    max_dist_km = 150
+
+    # Filter the correlation matrix by distance
+    filtered_corr_df = filter_correlation_by_distance(corr_df, min_dist_km, max_dist_km)
+
+    # Save the filtered correlation matrix
+    filtered_corr_df.to_pickle(output_corr_path)
+    print(f"Filtered correlation matrix saved to: {output_corr_path}")
+
+if __name__ == "__main__":
+    main()
