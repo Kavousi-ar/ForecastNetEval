@@ -1,0 +1,76 @@
+"""
+ERA5 Temperature Time Series Extraction for Network Analysis
+
+This script processes ERA5 reanalysis netCDF data to extract temperature time series 
+for a specified geographic region (Iran) and time period. The extracted time series 
+are saved as individual netCDF files per grid point, with metadata describing the 
+spatial and temporal context. These time series serve as inputs for constructing 
+complex networks used in weather forecast model evaluation.
+
+Author: alireza_kvc
+Created on: 2023-11-07
+"""
+
+import xarray as xr
+import numpy as np
+
+# Load ERA5 dataset from local netCDF file
+data = xr.open_dataset('/home/Era5/adaptor.mars.internal-1704532190.348644-16561-16-e5f7e5d3-4d7a-4f37-8d79-d641324e247b.nc')
+
+# Extract 2-meter temperature variable
+temp = data['t2m']
+
+# Select spatial subset covering Iran (latitude 24°–41°, longitude 43°–64°)
+temp = temp.sel(latitude=slice(41, 24), longitude=slice(43, 64))
+
+# Select time range: January 1–30, 2021, and limit to first 40 time steps for processing
+temp = temp.sel(time=slice('2021-01-01T00:00:00', '2021-01-30T00:00:00'))
+temp = temp[:40]
+
+# Reshape data by stacking latitude and longitude into a single dimension for iteration
+latlon = temp.stack(new=['latitude', 'longitude'])
+latlon = latlon.reset_index('time')
+
+# Group data by each grid point coordinate
+grouped = latlon.groupby('new')
+
+def save_time_series(elem):
+    """
+    Save temperature time series for a single grid point to a netCDF file.
+
+    Args:
+        elem (xarray.DataArray): Temperature values for one grid point over time.
+
+    Returns:
+        numpy.ndarray: The original values (unchanged).
+    """
+    coord = elem['new'].values  # (latitude, longitude) tuple
+    
+    # Create a DataArray with time dimension and appropriate coordinates
+    temp_series = xr.DataArray(
+        elem.values[:, 0],
+        dims=('time'),
+        coords={'time': temp['time'].values}
+    )
+    
+    # Add descriptive metadata attributes
+    temp_series.attrs['units'] = 'Celsius'
+    temp_series.attrs['initial_time'] = str(temp['time'].values[0])
+    temp_series.attrs['latitude_longitude'] = str(coord)
+    temp_series.attrs['long_name'] = (
+        f"ERA5 temperature time series from {temp['time'].values[0]} to {temp['time'].values[-1]}"
+    )
+    temp_series.attrs['name'] = 'Temperature'
+    temp_series.attrs['parameter_discipline_and_category'] = 'ERA5 temperature time series'
+    
+    # Define output filename based on coordinates
+    filename = f'/home/Era5/TimeSeries/temp{coord}.nc'
+    
+    # Save to netCDF file
+    temp_series.to_netcdf(filename)
+    print(f'Time series for coordinate {coord} saved to {filename}')
+    
+    return elem.values
+
+# Apply the saving function to each grid point group
+grouped.apply(save_time_series)
