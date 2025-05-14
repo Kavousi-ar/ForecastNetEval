@@ -1,0 +1,78 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Calculate Correlation Matrix from ERA5 Temperature Time Series
+
+This script reads temperature time series stored as NetCDF files in a specified 
+directory, normalizes each time series, and computes the correlation matrix 
+between all spatial points. The resulting correlation matrix is saved as a 
+pickle file for further analysis.
+
+Author: alireza_kavousi
+Created on: 2024-08-11
+"""
+
+import re
+import os
+import pandas as pd
+from netCDF4 import Dataset
+
+# Label and output filename components
+label = '26'
+output_name = f'CorrelationMatrix_850hPa_Temp_{label}-01-2021'
+
+# Directory containing NetCDF time series files (update to your data path)
+data_directory = os.path.join(
+    "path_to_your_data",  # Replace with your base data directory
+    "ERA5",
+    "850hPa",
+    f"{label}-01-2021",
+    "TimeSeries"
+)
+
+def extract_timeseries(file_path: str) -> pd.Series:
+    """
+    Extract and normalize temperature time series from a NetCDF file.
+
+    Args:
+        file_path (str): Path to the NetCDF file.
+
+    Returns:
+        pd.Series: Normalized temperature time series.
+    """
+    with Dataset(file_path, 'r') as dataset:
+        temp_data = dataset.variables['__xarray_dataarray_variable__'][:]
+    # Normalize the time series (zero mean, unit variance)
+    normalized_temp = (temp_data - temp_data.mean()) / temp_data.std()
+    return pd.Series(normalized_temp)
+
+def main():
+    """
+    Main function to read all NetCDF files, extract time series, compute correlation matrix,
+    and save the result as a pickle file.
+    """
+    time_series_dict = {}
+
+    # Iterate over NetCDF files in the directory
+    for filename in os.listdir(data_directory):
+        if filename.endswith('.nc'):
+            # Extract latitude and longitude from filename using regex
+            lat, lon = re.findall(r'\d+\.\d+', filename)
+            file_path = os.path.join(data_directory, filename)
+
+            # Extract normalized time series and store with coordinate key
+            time_series_dict[(lat, lon)] = extract_timeseries(file_path)
+
+    # Create a DataFrame where each column is a time series for a spatial point
+    df = pd.DataFrame(time_series_dict)
+
+    # Compute the correlation matrix between all spatial points
+    correlation_matrix = df.corr()
+
+    # Save the correlation matrix as a pickle file in the same directory
+    output_path = os.path.join(data_directory, f"{output_name}.pkl")
+    correlation_matrix.to_pickle(output_path)
+    print(f"Correlation matrix saved to {output_path}")
+
+if __name__ == "__main__":
+    main()
