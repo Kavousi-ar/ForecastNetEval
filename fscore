@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Evaluate Network Similarity Using Precision, Recall, and F1-Score Metrics
+
+This script compares predicted weather forecast networks against reference ERA5 
+networks across multiple spatial distance ranges. It reads network graphs stored 
+in GEXF format, converts them to adjacency matrices, binarizes edges based on a 
+correlation threshold, and computes precision, recall, and F1-score metrics to 
+quantify similarity. Results are saved as CSV files for further analysis.
+
+Author: alireza_kavousi
+Created on: 2025-05-14
+"""
+
+import os
+import time
+import numpy as np
+import networkx as nx
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+# Define spatial distance boundaries (in kilometers)
+Lbound = [1, 60, 90, 150, 300]
+Rbound = [60, 90, 150, 300, 500]
+
+# List of dates to process (format: day as string)
+dates = ["01"]
+
+# Base directories for ERA5 and GEFS network files (update these paths accordingly)
+era5_base_dir = os.path.join("path_to_your_data", "ERA5", "850hPa", "Networks")
+gefs_base_dir = os.path.join("path_to_your_data", "GEFS", "850hPaNCfiles", "Networks")
+
+# Output directory for saving precision-recall-F1 CSV files
+output_dir = os.path.join("path_to_your_results", "850hPaPRF")
+os.makedirs(output_dir, exist_ok=True)
+
+def read_gexf_to_adj_matrix(file_path: str) -> np.ndarray:
+    """
+    Read a GEXF network file and convert it to an adjacency matrix.
+
+    Args:
+        file_path (str): Path to the GEXF file.
+
+    Returns:
+        np.ndarray: Adjacency matrix of the network.
+    """
+    G = nx.read_gexf(file_path)
+    return nx.to_numpy_array(G)
+
+def evaluate_networks():
+    """
+    For each date and distance range, compare predicted GEFS networks against ERA5 reference,
+    compute precision, recall, and F1-score, and save results to CSV files.
+    """
+    for date in dates:
+        precision_list = []
+        recall_list = []
+        f1_list = []
+
+        for i, left_bound in enumerate(Lbound):
+            right_bound = Rbound[i]
+            dist_range_str = f"{left_bound}-{right_bound}km"
+
+            # Construct file paths for ERA5 (true) and GEFS (predicted) networks
+            era5_file = os.path.join(
+                era5_base_dir,
+                f"network{date}",
+                f"_G_ERA_5__Norm__Era5__850hPa_Corre_01-01-2021_{dist_range_str}.gexf"
+            )
+            gefs_file = os.path.join(
+                gefs_base_dir,
+                f"_G_GFS__Norm___GEFS__Norm__850hPa_Corre_{date}-01-2021_{dist_range_str}.gexf"
+            )
+
+            # Read adjacency matrices
+            true_adj = read_gexf_to_adj_matrix(era5_file)
+            pred_adj = read_gexf_to_adj_matrix(gefs_file)
+
+            # Flatten adjacency matrices for metric computation
+            true_flat = true_adj.flatten()
+            pred_flat = pred_adj.flatten()
+
+            # Binarize edges using correlation threshold
+            threshold = 0.960
+            true_binary = (true_flat >= threshold).astype(int)
+            pred_binary = (pred_flat >= threshold).astype(int)
+
+            # Compute precision, recall, and F1-score
+            precision = precision_score(true_binary, pred_binary)
+            recall = recall_score(true_binary, pred_binary)
+            f1 = f1_score(true_binary, pred_binary)
+
+            precision_list.append(precision)
+            recall_list.append(recall)
+            f1_list.append(f1)
+
+            print(f"Date: {date}, Distance: {dist_range_str}, F1-Score: {f1:.4f}")
+
+            time.sleep(1)  # Optional delay to avoid file read conflicts or rate limits
+
+        # Save precision, recall, and F1-score arrays to CSV
+        output_csv = os.path.join(output_dir, f"850hPa_{date}-01-2021.csv")
+        np.savetxt(
+            output_csv,
+            [precision_list, recall_list, f1_list],
+            delimiter=',',
+            fmt='%.6f',
+            header='Precision,Recall,F1-Score',
+            comments=''
+        )
+        print(f"Saved metrics to {output_csv}")
+        time.sleep(5)  # Optional delay between dates
+
+if __name__ == "__main__":
+    evaluate_networks()
