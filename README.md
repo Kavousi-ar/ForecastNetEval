@@ -3,7 +3,7 @@ Weather Forecast Model Evaluation Using Complex Network Analysis
 This repository contains a collection of Python scripts developed for evaluating weather forecast models through complex network analysis. The workflow includes extracting relevant meteorological data, constructing correlation matrices, filtering by spatial distance, building networks, and quantitatively comparing forecast networks against reference data.
 
 Repository Contents
-Script Name	Description
+
 Grib2Ex.py	Extracts temperature and total precipitation variables from GRIB2 files and converts them into compressed NetCDF files for efficient storage and processing. Supports parallel processing with Dask.
 tsEx.py	Processes ERA5 NetCDF files to extract normalized temperature time series for each spatial grid point, saving individual time series files for network construction.
 corrMat.py	Reads extracted time series files, normalizes the data, and computes the correlation matrix between all spatial points, saving the matrix for further analysis.
