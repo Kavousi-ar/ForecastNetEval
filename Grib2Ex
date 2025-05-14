@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+GRIB2 Temperature and Precipitation Extraction and Conversion to NetCDF
+
+This script recursively explores a specified directory for GRIB2 files, extracts 
+temperature (TMP_*) and total precipitation (APCP*) variables from each file, 
+and saves them as compressed NetCDF files with the same directory structure but 
+a different base path. The script supports both sequential and parallel processing 
+(using Dask) to efficiently handle large datasets.
+
+Author: alireza_kavousi
+Created on: 2023-11-01
+"""
+
+import os
+import time
+import xarray as xr
+import dask
+import dask.distributed
+
+def find_grib_files(base_dir):
+    """
+    Traverse the directory tree starting from base_dir and collect all file paths.
+
+    Args:
+        base_dir (str): Root directory to search for GRIB2 files.
+
+    Returns:
+        list of str: Full paths to all files found.
+    """
+    file_paths = []
+    for root, _, files in os.walk(base_dir):
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            file_paths.append(file_path)
+    return file_paths
+
+def extract_and_save(adr, src_keyword='GEFS', dst_keyword='GEFS_2_'):
+    """
+    Extract temperature and total precipitation variables from a GRIB2 file 
+    and save them as a compressed NetCDF file in a corresponding directory.
+
+    Args:
+        adr (str): Path to the input GRIB2 file.
+        src_keyword (str): Keyword in the original path to replace for output path.
+        dst_keyword (str): Keyword to replace src_keyword with in output path.
+    """
+    # Construct output file path by replacing part of the directory name
+    conv_adr = adr.replace(src_keyword, dst_keyword)
+
+    # Open the dataset using the pynio engine (supports GRIB2)
+    ds = xr.open_dataset(adr, engine='pynio')
+
+    # Select variables starting with 'TMP_' (temperature) or 'APCP' (precipitation)
+    var_chosen = [v for v in ds.variables if v.startswith('TMP_') or v.startswith('APCP')]
+
+    if not var_chosen:
+        print(f"No temperature or precipitation variables found in {adr}. Skipping.")
+        return
+
+    ds_selected = ds[var_chosen]
+
+    # Define compression encoding for NetCDF output
+    encoding = {var: {'zlib': True, 'complevel': 9} for var in var_chosen}
+
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(conv_adr), exist_ok=True)
+
+    # Save the selected variables to a compressed NetCDF file
+    ds_selected.to_netcdf(conv_adr, encoding=encoding)
+    print(f"Processed and saved: {conv_adr}")
+
+def process_files_sequential(file_list):
+    """
+    Process a list of files sequentially.
+
+    Args:
+        file_list (list of str): List of GRIB2 file paths.
+    """
+    start = time.time()
+    for adr in file_list:
+        extract_and_save(adr)
+    end = time.time()
+    print(f"Sequential processing completed in {end - start:.2f} seconds.")
+
+def process_files_parallel(file_list):
+    """
+    Process a list of files in parallel using Dask.
+
+    Args:
+        file_list (list of str): List of GRIB2 file paths.
+    """
+    start = time.time()
+    client = dask.distributed.Client()  # Initialize Dask cluster
+
+    # Create delayed tasks for each file
+    tasks = [dask.delayed(extract_and_save)(adr) for adr in file_list]
+
+    # Execute tasks in parallel
+    dask.compute(*tasks)
+
+    end = time.time()
+    print(f"Parallel processing completed in {end - start:.2f} seconds.")
+
+if __name__ == "__main__":
+    # Define the root directory containing GRIB2 files
+    root_dir = '/home/dataTest'
+
+    # Find all GRIB2 files recursively
+    grib_files = find_grib_files(root_dir)
+
+    # Uncomment one of the following depending on desired processing mode:
+
+    # Sequential processing
+    # process_files_sequential(grib_files)
+
+    # Parallel processing using Dask
+    process_files_parallel(grib_files)
+
+    # Example for processing remaining files (not_done) can be added similarly
